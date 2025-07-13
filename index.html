@@ -169,7 +169,7 @@
     <script type="module">
         // Firebase imports
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, collection, query, orderBy, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- 全局变量和常量 ---
@@ -229,9 +229,20 @@
         let chatUnsubscribe = null; // To unsubscribe from Firestore chat updates
 
         // --- Firebase Initialization and Authentication ---
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        // IMPORTANT: Replace these placeholder values with your actual Firebase project configuration!
+        // You can find these in your Firebase project settings -> "Your apps" -> "Web app"
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY", // <-- REPLACE THIS
+            authDomain: "YOUR_PROJECT_ID.firebaseapp.com", // <-- REPLACE THIS (e.g., your-project-id.firebaseapp.com)
+            projectId: "YOUR_PROJECT_ID", // <-- REPLACE THIS
+            storageBucket: "YOUR_PROJECT_ID.appspot.com", // <-- REPLACE THIS (e.g., your-project-id.appspot.com)
+            messagingSenderId: "YOUR_MESSAGING_SENDER_ID", // <-- REPLACE THIS
+            appId: "YOUR_APP_ID" // <-- REPLACE THIS
+        };
+
+        // This appId is used for Firestore collection path, usually your projectId is fine.
+        // If you want a specific app ID for Firestore security rules, use that instead.
+        const firestoreAppId = firebaseConfig.projectId; 
 
         async function initializeFirebase() {
             try {
@@ -248,11 +259,9 @@
                     } else {
                         authStatusEl.textContent = '匿名认证中...';
                         try {
-                            if (initialAuthToken) {
-                                await signInWithCustomToken(auth, initialAuthToken);
-                            } else {
-                                await signInAnonymously(auth);
-                            }
+                            // In a deployed environment, we sign in anonymously directly.
+                            // The __initial_auth_token is only for the Canvas environment.
+                            await signInAnonymously(auth);
                         } catch (error) {
                             console.error("Firebase authentication failed:", error);
                             authStatusEl.textContent = `认证失败: ${error.message}`;
@@ -818,7 +827,8 @@
 
             onlineGameStatusEl.textContent = '创建游戏中...';
             try {
-                const gamesCollectionRef = collection(db, `artifacts/${appId}/public/data/games`);
+                // Use firestoreAppId for the collection path
+                const gamesCollectionRef = collection(db, `artifacts/${firestoreAppId}/public/data/games`);
                 const newGameRef = doc(gamesCollectionRef); // Let Firestore generate ID
                 const newGameId = newGameRef.id;
 
@@ -863,7 +873,8 @@
 
             onlineGameStatusEl.textContent = '加入游戏中...';
             try {
-                const gameDocRef = doc(db, `artifacts/${appId}/public/data/games`, gameIdToJoin);
+                // Use firestoreAppId for the collection path
+                const gameDocRef = doc(db, `artifacts/${firestoreAppId}/public/data/games`, gameIdToJoin);
                 const gameDocSnap = await getDoc(gameDocRef);
 
                 if (!gameDocSnap.exists()) {
@@ -873,7 +884,7 @@
 
                 const gameData = gameDocSnap.data();
 
-                if (gameData.status === 'playing') {
+                if (gameData.status === 'playing' && gameData.player1Id !== userId && gameData.player2Id !== userId) {
                     onlineGameStatusEl.textContent = '该游戏已开始或已满员。';
                     return;
                 }
@@ -923,7 +934,8 @@
 
             onlineGameStatusEl.textContent = '发送落子中...';
             try {
-                const gameDocRef = doc(db, `artifacts/${appId}/public/data/games`, currentGameId);
+                // Use firestoreAppId for the collection path
+                const gameDocRef = doc(db, `artifacts/${firestoreAppId}/public/data/games`, currentGameId);
                 
                 // Simulate move locally to check for win/draw before sending
                 board[row][col] = currentPlayer;
@@ -966,7 +978,8 @@
                 gameUnsubscribe(); // Unsubscribe from previous game if any
             }
 
-            const gameDocRef = doc(db, `artifacts/${appId}/public/data/games`, gameId);
+            // Use firestoreAppId for the collection path
+            const gameDocRef = doc(db, `artifacts/${firestoreAppId}/public/data/games`, gameId);
             gameUnsubscribe = onSnapshot(gameDocRef, (docSnap) => {
                 if (docSnap.exists()) {
                     const data = docSnap.data();
@@ -1016,7 +1029,8 @@
             }
 
             try {
-                const chatCollectionRef = collection(db, `artifacts/${appId}/public/data/games/${currentGameId}/messages`);
+                // Use firestoreAppId for the collection path
+                const chatCollectionRef = collection(db, `artifacts/${firestoreAppId}/public/data/games/${currentGameId}/messages`);
                 await addDoc(chatCollectionRef, {
                     senderId: userId,
                     senderName: userId.substring(0, 6), // Use a short ID as name
@@ -1033,7 +1047,8 @@
             if (chatUnsubscribe) {
                 chatUnsubscribe();
             }
-            const messagesCollectionRef = collection(db, `artifacts/${appId}/public/data/games/${gameId}/messages`);
+            // Use firestoreAppId for the collection path
+            const messagesCollectionRef = collection(db, `artifacts/${firestoreAppId}/public/data/games/${gameId}/messages`);
             const q = query(messagesCollectionRef, orderBy('timestamp', 'asc'));
 
             chatUnsubscribe = onSnapshot(q, (snapshot) => {
