@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>五子棋游戏 (AI强化最终版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            touch-action: manipulation;
+        }
+        #gomoku-board {
+            background-color: #f3d39c;
+            cursor: pointer;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+        .mode-btn {
+            transition: all 0.2s ease-in-out;
+        }
+        .mode-btn.active {
+            background-color: #4f46e5; /* indigo-700 */
+            color: white;
+            transform: scale(1.05);
+            box-shadow: 0 2px 8px rgba(79, 70, 229, 0.5);
+        }
+        #ai-thoughts {
+            background-color: #f9fafb; /* gray-50 */
+            border: 1px solid #e5e7eb; /* gray-200 */
+            font-family: 'Courier New', Courier, monospace;
+            white-space: pre-wrap;
+            min-height: 80px;
+        }
+        /* Style for the hover score tooltip */
+        #hover-score-tooltip {
+            position: absolute;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.875rem; /* text-sm */
+            pointer-events: none; /* Allows clicks to pass through */
+            z-index: 1000;
+            display: none; /* Hidden by default */
+        }
+        /* Chat styles */
+        #chat-messages {
+            height: 150px;
+            overflow-y: auto;
+            border: 1px solid #e5e7eb;
+            background-color: #f9fafb;
+            padding: 8px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            margin-bottom: 8px;
+        }
+        .chat-message {
+            margin-bottom: 4px;
+        }
+        .chat-message .sender {
+            font-weight: bold;
+            margin-right: 5px;
+        }
+        .chat-message .timestamp {
+            font-size: 0.75rem;
+            color: #6b7280;
+            margin-left: 5px;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex flex-col items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-xl mx-auto text-center">
+        <header class="mb-4">
+            <h1 class="text-4xl md:text-5xl font-bold text-gray-800">五子棋</h1>
+            <p class="text-gray-600 mt-2">与朋友或不同难度的AI一决高下</p>
+        </header>
+
+        <main class="bg-white p-4 sm:p-6 rounded-2xl shadow-lg">
+            <!-- 游戏控制面板 -->
+            <div class="flex flex-wrap justify-center items-center gap-x-4 gap-y-2 mb-4">
+                <div id="mode-selection" class="flex justify-center gap-2">
+                    <button id="pva-btn" class="mode-btn px-4 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg shadow-sm">人机对战</button>
+                    <button id="pvp-btn" class="mode-btn px-4 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg shadow-sm">双人对战</button>
+                    <button id="online-btn" class="mode-btn px-4 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg shadow-sm">远程联机</button>
+                </div>
+                <div id="difficulty-selection" class="relative">
+                    <label for="ai-difficulty" class="sr-only">AI难度</label>
+                    <select id="ai-difficulty" class="pl-3 pr-8 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 rounded-md shadow-sm">
+                        <option value="easy">简单</option>
+                        <option value="medium" selected>中等</option>
+                        <option value="hard">困难</option>
+                    </select>
+                </div>
+                   <div class="flex items-center">
+                    <input type="checkbox" id="show-coords-toggle" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" checked>
+                    <label for="show-coords-toggle" class="ml-2 block text-sm font-medium text-gray-700">显示坐标</label>
+                </div>
+            </div>
+
+            <!-- 游戏状态显示 -->
+            <div id="game-status" class="mb-4 h-8 text-xl font-semibold text-gray-700 transition-all duration-300">
+                请选择游戏模式
+            </div>
+
+            <!-- 胜率显示 -->
+            <div class="flex justify-center gap-6 mb-4 text-lg font-semibold">
+                <div id="black-advantage" class="text-gray-800">黑棋优势分: 0</div>
+                <div id="white-advantage" class="text-gray-800">白棋优势分: 0</div>
+            </div>
+
+            <!-- 远程联机控制面板 (新添加) -->
+            <div id="online-controls" class="mb-4 p-4 border rounded-lg bg-gray-50 hidden">
+                <div id="auth-status" class="text-sm text-gray-600 mb-2">认证中...</div>
+                <div id="player-id-display" class="text-sm text-gray-600 mb-4">你的ID: <span id="current-user-id"></span></div>
+
+                <div id="game-lobby">
+                    <button id="create-game-btn" class="px-4 py-2 bg-green-600 text-white font-bold rounded-lg shadow-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-75 transition-transform transform hover:scale-105 mb-2">创建新游戏</button>
+                    <div id="game-id-display" class="text-md font-semibold text-gray-800 mb-4 hidden">游戏ID: <span id="current-game-id"></span></div>
+
+                    <div class="flex flex-col sm:flex-row gap-2 mb-4">
+                        <input type="text" id="join-game-id" placeholder="输入游戏ID加入" class="flex-grow px-3 py-2 border rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                        <button id="join-game-btn" class="px-4 py-2 bg-blue-600 text-white font-bold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75 transition-transform transform hover:scale-105">加入游戏</button>
+                    </div>
+                    <div id="online-game-status" class="text-sm text-gray-700"></div>
+                </div>
+
+                <!-- Chat Section -->
+                <div id="chat-section" class="mt-4 hidden">
+                    <h3 class="text-md font-semibold text-gray-700 mb-2">聊天</h3>
+                    <div id="chat-messages"></div>
+                    <div class="flex gap-2">
+                        <input type="text" id="chat-input" placeholder="输入消息..." class="flex-grow px-3 py-2 border rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                        <button id="send-chat-btn" class="px-4 py-2 bg-indigo-600 text-white font-bold rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-75 transition-transform transform hover:scale-105">发送</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 五子棋棋盘 -->
+            <div class="flex justify-center relative">
+                <canvas id="gomoku-board" width="480" height="480"></canvas>
+                <!-- Tooltip for hover score -->
+                <div id="hover-score-tooltip"></div>
+            </div>
+
+            <!-- 控制按钮 -->
+            <div class="mt-6">
+                <button id="new-game-btn" class="w-full sm:w-auto px-8 py-3 bg-indigo-600 text-white font-bold rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-75 transition-transform transform hover:scale-105">
+                    新游戏
+                </button>
+            </div>
+            
+            <!-- AI 思路显示 -->
+            <div id="ai-thoughts-container" class="mt-6 text-left">
+                <label for="ai-thoughts" class="block text-sm font-medium text-gray-700 mb-1">AI 决策思路:</label>
+                <div id="ai-thoughts" class="w-full p-2 rounded-md text-sm text-gray-600"></div>
+            </div>
+        </main>
+
+        <footer class="text-center mt-8 text-gray-500 text-sm">
+            <p>祝您游戏愉快！</p>
+        </footer>
+    </div>
+
+    <script type="module">
+        // Firebase imports
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, collection, query, orderBy, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- 全局变量和常量 ---
+        const canvas = document.getElementById('gomoku-board');
+        const ctx = canvas.getContext('2d');
+        const newGameBtn = document.getElementById('new-game-btn');
+        const gameStatusEl = document.getElementById('game-status');
+        const pvpBtn = document.getElementById('pvp-btn');
+        const pvaBtn = document.getElementById('pva-btn');
+        const onlineBtn = document.getElementById('online-btn'); // New: Online mode button
+        const difficultySelect = document.getElementById('ai-difficulty');
+        const difficultyContainer = document.getElementById('difficulty-selection');
+        const thoughtsContainer = document.getElementById('ai-thoughts-container');
+        const thoughtsEl = document.getElementById('ai-thoughts');
+        const coordsToggle = document.getElementById('show-coords-toggle');
+        const hoverScoreTooltip = document.getElementById('hover-score-tooltip'); 
+        const blackAdvantageEl = document.getElementById('black-advantage'); 
+        const whiteAdvantageEl = document.getElementById('white-advantage'); 
+
+        // Online game specific elements
+        const onlineControls = document.getElementById('online-controls');
+        const authStatusEl = document.getElementById('auth-status');
+        const currentUserIdEl = document.getElementById('current-user-id');
+        const createGameBtn = document.getElementById('create-game-btn');
+        const joinGameIdInput = document.getElementById('join-game-id');
+        const joinGameBtn = document.getElementById('join-game-btn');
+        const gameIdDisplay = document.getElementById('game-id-display');
+        const currentGameIdEl = document.getElementById('current-game-id');
+        const onlineGameStatusEl = document.getElementById('online-game-status');
+        const chatSection = document.getElementById('chat-section');
+        const chatMessagesEl = document.getElementById('chat-messages');
+        const chatInput = document.getElementById('chat-input');
+        const sendChatBtn = document.getElementById('send-chat-btn');
+
+        const BOARD_SIZE = 15;
+        const PADDING = 20;
+        const CELL_SIZE = (canvas.width - PADDING * 2) / (BOARD_SIZE - 1);
+        const STONE_RADIUS = CELL_SIZE / 2 * 0.85;
+
+        let board = [];
+        let currentPlayer = 1;
+        let gameOver = false;
+        let gameMode = 'pva'; // 'pva', 'pvp', 'online'
+        let showCoordinates = true;
+        let lastMove = null;
+        const HUMAN_PLAYER = 1; // Black
+        const AI_PLAYER = 2;    // White
+
+        // Firebase variables
+        let app;
+        let db;
+        let auth;
+        let userId = 'anonymous'; // Default anonymous ID
+        let currentGameId = null;
+        let playerRole = null; // 1 for black, 2 for white in online mode
+        let gameUnsubscribe = null; // To unsubscribe from Firestore game updates
+        let chatUnsubscribe = null; // To unsubscribe from Firestore chat updates
+
+        // --- Firebase Initialization and Authentication ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        async function initializeFirebase() {
+            try {
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        currentUserIdEl.textContent = userId;
+                        authStatusEl.textContent = '已认证';
+                        console.log("Firebase authenticated. User ID:", userId);
+                    } else {
+                        authStatusEl.textContent = '匿名认证中...';
+                        try {
+                            if (initialAuthToken) {
+                                await signInWithCustomToken(auth, initialAuthToken);
+                            } else {
+                                await signInAnonymously(auth);
+                            }
+                        } catch (error) {
+                            console.error("Firebase authentication failed:", error);
+                            authStatusEl.textContent = `认证失败: ${error.message}`;
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error("Error initializing Firebase:", error);
+                authStatusEl.textContent = `Firebase初始化失败: ${error.message}`;
+            }
+        }
+
+        // --- Core Game Logic ---
+
+        function initGame() {
+            board = Array(BOARD_SIZE).fill(0).map(() => Array(BOARD_SIZE).fill(0));
+            currentPlayer = 1;
+            gameOver = true;
+            lastMove = null;
+            showCoordinates = coordsToggle.checked;
+            redrawAll();
+            updateModeButtons();
+            updateUIVisibility();
+            updateStatus('请选择游戏模式', '#1f2937');
+            thoughtsEl.textContent = '等待新游戏开始...';
+            clearHoverScore(); // Ensure tooltip is hidden on init
+            updateAdvantageDisplay(0, 0); // Initialize advantage scores
+            
+            // Clear online game specific states
+            currentGameId = null;
+            playerRole = null;
+            gameIdDisplay.classList.add('hidden');
+            currentGameIdEl.textContent = '';
+            onlineGameStatusEl.textContent = '';
+            chatSection.classList.add('hidden');
+            chatMessagesEl.innerHTML = ''; // Clear chat messages
+            if (gameUnsubscribe) {
+                gameUnsubscribe();
+                gameUnsubscribe = null;
+            }
+            if (chatUnsubscribe) {
+                chatUnsubscribe();
+                chatUnsubscribe = null;
+            }
+        }
+
+        function startNewGame() {
+            board = Array(BOARD_SIZE).fill(0).map(() => Array(BOARD_SIZE).fill(0));
+            currentPlayer = 1;
+            gameOver = false;
+            lastMove = null;
+            redrawAll();
+            updateStatus('你的回合 (黑棋)', '#1f2937');
+            if (gameMode === 'pva') {
+                thoughtsEl.textContent = '等待你落子...';
+            } else if (gameMode === 'online') {
+                // For online, status will be updated via Firestore listener
+                updateStatus('等待对手...', '#6b7280');
+            }
+            clearHoverScore(); // Ensure tooltip is hidden on new game
+            updateAdvantageDisplayForCurrentBoard(); // Update advantage scores
+        }
+        
+        function redrawAll() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawBoard();
+            for(let r = 0; r < BOARD_SIZE; r++) {
+                for(let c = 0; c < BOARD_SIZE; c++) {
+                    if(board[r][c] !== 0) {
+                        drawStone(r, c, board[r][c]);
+                    }
+                }
+            }
+            if (lastMove) {
+                drawLastMoveMarker(lastMove.row, lastMove.col);
+            }
+        }
+
+        function drawBoard() {
+            ctx.strokeStyle = '#374151';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < BOARD_SIZE; i++) {
+                ctx.beginPath();
+                ctx.moveTo(PADDING + i * CELL_SIZE, PADDING);
+                ctx.lineTo(PADDING + i * CELL_SIZE, canvas.height - PADDING);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(PADDING, PADDING + i * CELL_SIZE);
+                ctx.lineTo(canvas.width - PADDING, PADDING + i * CELL_SIZE);
+                ctx.stroke();
+            }
+            const starPoints = [{x: 3, y: 3}, {x: 11, y: 3}, {x: 3, y: 11}, {x: 11, y: 11}, {x: 7, y: 7}];
+            ctx.fillStyle = '#374151';
+            starPoints.forEach(p => {
+                ctx.beginPath();
+                ctx.arc(PADDING + p.x * CELL_SIZE, PADDING + p.y * CELL_SIZE, 4, 0, 2 * Math.PI);
+                ctx.fill();
+            });
+            
+            if (showCoordinates) {
+                ctx.fillStyle = '#4b5563';
+                ctx.font = '12px Noto Sans SC';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                for (let i = 0; i < BOARD_SIZE; i++) {
+                    const letter = String.fromCharCode(65 + i);
+                    ctx.fillText(letter, PADDING + i * CELL_SIZE, PADDING / 2.5);
+                    ctx.fillText(letter, PADDING + i * CELL_SIZE, canvas.height - PADDING / 2.5);
+                    const number = (BOARD_SIZE - i).toString();
+                    ctx.fillText(number, PADDING / 2.5, PADDING + i * CELL_SIZE);
+                    ctx.fillText(number, canvas.width - PADDING / 2.5, PADDING + i * CELL_SIZE);
+                }
+            }
+        }
+
+        function drawStone(row, col, player) {
+            const x = PADDING + col * CELL_SIZE;
+            const y = PADDING + row * CELL_SIZE;
+            ctx.beginPath();
+            ctx.arc(x, y, STONE_RADIUS, 0, 2 * Math.PI);
+            if (player === 1) {
+                ctx.fillStyle = 'black';
+            } else {
+                ctx.fillStyle = 'white';
+                ctx.strokeStyle = '#a1a1aa';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            }
+            ctx.fill();
+        }
+        
+        function drawLastMoveMarker(row, col) {
+            const x = PADDING + col * CELL_SIZE;
+            const y = PADDING + row * CELL_SIZE;
+            ctx.fillStyle = 'rgba(239, 68, 68, 0.8)'; // red-500 with opacity
+            ctx.fillRect(x - STONE_RADIUS / 4, y - STONE_RADIUS / 4, STONE_RADIUS / 2, STONE_RADIUS / 2);
+        }
+
+        async function handleBoardClick(e) {
+            if (gameOver) return; // Game is over, no more moves
+
+            if (gameMode === 'pva' && currentPlayer === AI_PLAYER) return; // AI's turn, human cannot click
+
+            if (gameMode === 'online' && currentPlayer !== playerRole) {
+                onlineGameStatusEl.textContent = '等待对手落子...';
+                return; // Not your turn in online mode
+            }
+
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            const col = Math.round((x - PADDING) / CELL_SIZE);
+            const row = Math.round((y - PADDING) / CELL_SIZE);
+
+            if (row >= 0 && row < BOARD_SIZE && col >= 0 && col < BOARD_SIZE && board[row][col] === 0) {
+                if (gameMode === 'online') {
+                    await makeOnlineMove(row, col);
+                } else {
+                    placeStone(row, col); // Local move
+                }
+            }
+        }
+        
+        function placeStone(row, col) {
+            if (gameOver || board[row][col] !== 0) return;
+
+            board[row][col] = currentPlayer;
+            lastMove = { row, col };
+            redrawAll();
+
+            if (checkWin(row, col)) {
+                gameOver = true;
+                let winner = gameMode === 'pvp' ? (currentPlayer === 1 ? '黑方' : '白方') : (currentPlayer === HUMAN_PLAYER ? '你' : 'AI');
+                updateStatus(`${winner}获胜！`, winner === '你' || winner === '黑方' ? '#16a34a' : '#ef4444');
+                clearHoverScore(); // Hide tooltip on game end
+                updateAdvantageDisplayForCurrentBoard(); // Update advantage scores
+                return;
+            }
+            
+            if (isBoardFull()) {
+                gameOver = true;
+                updateStatus('平局！', '#6b7280');
+                clearHoverScore(); // Hide tooltip on game end
+                updateAdvantageDisplayForCurrentBoard(); // Update advantage scores
+                return;
+            }
+
+            currentPlayer = currentPlayer === 1 ? 2 : 1;
+            
+            if (gameMode === 'pva' && currentPlayer === AI_PLAYER) {
+                updateStatus('AI 思考中...', '#6b7280');
+                clearHoverScore(); // Hide tooltip when AI is thinking
+                setTimeout(aiTurn, 500);
+            } else {
+                const nextPlayer = gameMode === 'pvp' ? (currentPlayer === 1 ? '黑方' : '白方') : '你';
+                updateStatus(`${nextPlayer}的回合`, '#1f2937');
+                updateAdvantageDisplayForCurrentBoard(); // Update advantage scores
+            }
+        }
+
+        function checkWin(row, col) {
+            const player = board[row][col];
+            if (player === 0) return false;
+            const directions = [{x: 1, y: 0}, {x: 0, y: 1}, {x: 1, y: 1}, {x: 1, y: -1}];
+            for (const dir of directions) {
+                let count = 1;
+                for (let i = 1; i < 5; i++) {
+                    const r = row + i * dir.y, c = col + i * dir.x;
+                    if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && board[r][c] === player) count++; else break;
+                }
+                for (let i = 1; i < 5; i++) {
+                    const r = row - i * dir.y, c = col - i * dir.x;
+                    if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && board[r][c] === player) count++; else break;
+                }
+                if (count >= 5) return true;
+            }
+            return false;
+        }
+
+        function isBoardFull() {
+            return board.every(row => row.every(cell => cell !== 0));
+        }
+        
+        function updateUIVisibility() {
+            // Hide all specific controls first
+            difficultyContainer.style.display = 'none';
+            thoughtsContainer.style.display = 'none';
+            onlineControls.classList.add('hidden');
+            chatSection.classList.add('hidden'); // Always hide chat by default
+
+            if (gameMode === 'pva') {
+                difficultyContainer.style.display = 'block';
+                thoughtsContainer.style.display = 'block';
+            } else if (gameMode === 'online') {
+                onlineControls.classList.remove('hidden');
+                // Chat will be shown when game starts
+            }
+        }
+
+        function updateStatus(text, color) {
+            gameStatusEl.textContent = text;
+            gameStatusEl.style.color = color;
+        }
+        
+        function updateModeButtons() {
+            pvaBtn.classList.toggle('active', gameMode === 'pva');
+            pvpBtn.classList.toggle('active', gameMode === 'pvp');
+            onlineBtn.classList.toggle('active', gameMode === 'online');
+        }
+
+        // --- AI Logic ---
+
+        function aiTurn() {
+            if (gameOver) return;
+            const difficulty = difficultySelect.value;
+            const { move, thoughts } = findBestMove(difficulty);
+            displayAIThoughts(thoughts);
+            if (move) placeStone(move.row, move.col);
+        }
+
+        function findBestMove(difficulty) {
+            let thoughts = [];
+            let bestMove = null;
+            let bestScore = -Infinity;
+
+            const moves = getCandidateMoves(2); // Get relevant candidate moves
+
+            // --- Step 1: Check for immediate winning moves for AI ---
+            for (const move of moves) {
+                const r = move.row, c = move.col;
+                board[r][c] = AI_PLAYER;
+                if (checkWin(r, c)) {
+                    board[r][c] = 0; // Revert
+                    thoughts.push({ move: { row: r, col: c }, score: 1000000, reason: 'AI立即获胜' }); // Very high score for immediate win
+                    return { move: { row: r, col: c }, thoughts: thoughts.slice(0, 5) }; // AI wins, take this move
+                }
+                board[r][c] = 0; // Revert
+            }
+
+            // --- Step 2: Check for immediate winning moves for Human (to block) ---
+            for (const move of moves) {
+                const r = move.row, c = move.col;
+                board[r][c] = HUMAN_PLAYER; // Simulate human playing here
+                if (checkWin(r, c)) {
+                    board[r][c] = 0; // Revert
+                    thoughts.push({ move: { row: r, col: c }, score: 900000, reason: '阻止玩家立即获胜' }); // High score for blocking
+                    return { move: { row: r, col: c }, thoughts: thoughts.slice(0, 5) }; // Block human's win, take this move
+                }
+                board[r][c] = 0; // Revert
+            }
+
+            // --- Step 3: Evaluate all candidate moves using the scoring function (for medium/hard difficulty) ---
+            for (const move of moves) {
+                const r = move.row, c = move.col;
+                let score;
+
+                if (difficulty === 'hard') {
+                    // Hard mode: Simulate AI move, then find player's best counter, and calculate score based on that.
+                    // This is essentially a 1-ply lookahead for the opponent.
+                    board[r][c] = AI_PLAYER;
+                    const aiOffensiveScore = calculateScoreForPosition(r, c, AI_PLAYER) * 1.1; // AI offense slightly higher weight
+                    
+                    let maxHumanCounterScore = 0;
+                    const counterMoves = getCandidateMoves(2); // Candidate moves for human's counter
+                    for (const counterMove of counterMoves) {
+                        if (counterMove.row === r && counterMove.col === c) continue; // Don't simulate human playing on AI's just placed stone
+
+                        board[counterMove.row][counterMove.col] = HUMAN_PLAYER;
+                        const humanCounterScore = calculateScoreForPosition(counterMove.row, counterMove.col, HUMAN_PLAYER);
+                        if (humanCounterScore > maxHumanCounterScore) {
+                            maxHumanCounterScore = humanCounterScore;
+                        }
+                        board[counterMove.row][counterMove.col] = 0; // Revert simulation
+                    }
+                    score = aiOffensiveScore - maxHumanCounterScore; // AI wants to maximize its score and minimize human's counter score
+                    board[r][c] = 0; // Revert AI's simulated move
+                } else { // Medium and Easy (if not random)
+                    // Medium mode: Simple evaluation of offensive and defensive scores
+                    board[r][c] = AI_PLAYER;
+                    const aiScore = calculateScoreForPosition(r, c, AI_PLAYER);
+                    board[r][c] = HUMAN_PLAYER; // Simulate human playing at the same spot to get defensive score
+                    const humanScore = calculateScoreForPosition(r, c, HUMAN_PLAYER);
+                    board[r][c] = 0;
+                    score = aiScore + humanScore; // Combine offensive and defensive potential
+                }
+
+                thoughts.push({ move: { row: r, col: c }, score: score });
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestMove = { row: r, col: c };
+                }
+            }
+            
+            thoughts.sort((a, b) => b.score - a.score);
+            // If no immediate win/block, return the best move from the scoring function
+            return { move: bestMove, thoughts: thoughts.slice(0, 5) };
+        }
+        
+        function getCandidateMoves(radius) {
+            const candidates = new Set();
+            let hasStones = false;
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    if (board[r][c] !== 0) {
+                        hasStones = true;
+                        for (let i = -radius; i <= radius; i++) {
+                            for (let j = -radius; j <= radius; j++) {
+                                if (i === 0 && j === 0) continue;
+                                const nr = r + i, nc = c + j;
+                                if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && board[nr][nc] === 0) {
+                                    candidates.add(`${nr},${nc}`);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if (!hasStones) return [{row: 7, col: 7}]; // If board is empty, suggest center
+            return Array.from(candidates).map(s => ({row: parseInt(s.split(',')[0]), col: parseInt(s.split(',')[1])}));
+        }
+
+        function calculateScoreForPosition(row, col, player) {
+            let score = 0;
+            const directions = [{x: 1, y: 0}, {x: 0, y: 1}, {x: 1, y: 1}, {x: 1, y: -1}];
+            // Score table for different patterns (count of stones, number of open ends)
+            // '5': Five in a row (win) - highest priority
+            // '42': Live four (four stones with two open ends) - very strong threat/opportunity
+            // '41': Sleeping four (four stones with one open end, or blocked on one side) - strong threat/opportunity
+            // '32': Live three (three stones with two open ends) - good potential for future threats
+            // '31': Sleeping three (three stones with one open end, or blocked on one side)
+            // '22': Live two
+            // '21': Sleeping two
+            // '12': Live one
+            // '11': Sleeping one
+            const scoreTable = {
+                '5': 500000, 
+                '42': 10000, 
+                '41': 5000, 
+                '32': 1000,
+                '31': 500, 
+                '22': 100, 
+                '21': 50, 
+                '12': 10, 
+                '11': 1
+            };
+
+            for (const dir of directions) {
+                let count = 1, openEnds = 0;
+                let blockedStart = false, blockedEnd = false;
+
+                // Check in positive direction
+                for (let i = 1; i < 5; i++) {
+                    const r = row + i * dir.y, c = col + i * dir.x;
+                    if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && board[r][c] === player) {
+                        count++;
+                    } else {
+                        if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && board[r][c] === 0) {
+                            openEnds++;
+                        } else {
+                            blockedEnd = true;
+                        }
+                        break;
+                    }
+                }
+                // Check in negative direction
+                for (let i = 1; i < 5; i++) {
+                    const r = row - i * dir.y, c = col - i * dir.x;
+                    if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && board[r][c] === player) {
+                        count++;
+                    } else {
+                        if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && board[r][c] === 0) {
+                            openEnds++;
+                        } else {
+                            blockedStart = true;
+                        }
+                        break;
+                    }
+                }
+                
+                // Adjust openEnds if both ends are blocked
+                if (blockedStart && blockedEnd) {
+                    openEnds = 0;
+                } else if (blockedStart || blockedEnd) {
+                    openEnds = Math.min(openEnds, 1); // Only one open end if one side is blocked
+                }
+
+                if (count >= 5) {
+                    score += scoreTable['5'];
+                } else if (count > 0) {
+                    const key = `${count}${openEnds}`;
+                    if (scoreTable[key]) score += scoreTable[key];
+                    // Special case for double live three (very strong)
+                    // This is a simplified way to detect potential double live three.
+                    // A more robust implementation would involve checking all lines for other live threes.
+                    // For this AI, we'll just give a higher score to live threes.
+                    if (count === 3 && openEnds === 2) {
+                        score += 500; // Additional bonus for live three
+                    }
+                }
+            }
+            return score;
+        }
+
+        function displayAIThoughts(thoughts) {
+            if (!thoughts || thoughts.length === 0) {
+                thoughtsEl.textContent = 'AI没有找到合适的落子点。';
+                return;
+            }
+            let text = 'AI评估了以下几个最佳位置:\n';
+            text += '----------------------------\n';
+            thoughts.forEach((thought, index) => {
+                const { move, score, reason } = thought;
+                const pos = `(${String.fromCharCode(65 + move.col)}, ${BOARD_SIZE - move.row})`;
+                text += `${index + 1}. 落子于 ${pos.padEnd(6)} | 评估分: ${Math.round(score).toString().padEnd(8)}`;
+                if(reason) text += ` | 原因: ${reason}`;
+                text += '\n';
+            });
+            thoughtsEl.textContent = text;
+        }
+
+        // --- Hover Score Logic ---
+        function handleMouseMove(e) {
+            if (gameOver || (gameMode === 'pva' && currentPlayer === AI_PLAYER) || gameMode === 'online') {
+                clearHoverScore();
+                return;
+            }
+
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            let col = Math.round((x - PADDING) / CELL_SIZE); 
+            let row = Math.round((y - PADDING) / CELL_SIZE);
+
+            row = Math.max(0, Math.min(BOARD_SIZE - 1, row));
+            col = Math.max(0, Math.min(BOARD_SIZE - 1, col));
+
+            if (board[row][col] === 0) { 
+                board[row][col] = currentPlayer;
+                const score = calculateScoreForPosition(row, col, currentPlayer);
+                board[row][col] = 0; 
+
+                hoverScoreTooltip.textContent = `评估分: ${Math.round(score)}`;
+                hoverScoreTooltip.style.left = `${e.clientX + 15}px`; 
+                hoverScoreTooltip.style.top = `${e.clientY - 10}px`;  
+                hoverScoreTooltip.style.display = 'block';
+            } else {
+                clearHoverScore();
+            }
+        }
+
+        function handleMouseOut() {
+            clearHoverScore();
+        }
+
+        function clearHoverScore() {
+            hoverScoreTooltip.style.display = 'none';
+            hoverScoreTooltip.textContent = '';
+        }
+
+        // --- 计算并显示棋局优势分 ---
+        function updateAdvantageDisplayForCurrentBoard() {
+            if (gameOver) {
+                updateAdvantageDisplay(0, 0); // Clear scores if game is over
+                return;
+            }
+
+            let maxBlackPotentialScore = 0;
+            let maxWhitePotentialScore = 0;
+            const candidateMoves = getCandidateMoves(2); // Get relevant candidate moves
+
+            if (candidateMoves.length === 0 && !isBoardFull()) {
+                updateAdvantageDisplay(0, 0);
+                return;
+            }
+
+            for (const move of candidateMoves) {
+                const r = move.row;
+                const c = move.col;
+
+                // Simulate Black's move
+                board[r][c] = HUMAN_PLAYER;
+                const blackScore = calculateScoreForPosition(r, c, HUMAN_PLAYER);
+                if (blackScore > maxBlackPotentialScore) {
+                    maxBlackPotentialScore = blackScore;
+                }
+                board[r][c] = 0; // Revert
+
+                // Simulate White's move
+                board[r][c] = AI_PLAYER;
+                const whiteScore = calculateScoreForPosition(r, c, AI_PLAYER);
+                if (whiteScore > maxWhitePotentialScore) {
+                    maxWhitePotentialScore = whiteScore;
+                }
+                board[r][c] = 0; // Revert
+            }
+            
+            updateAdvantageDisplay(maxBlackPotentialScore, maxWhitePotentialScore);
+        }
+
+        function updateAdvantageDisplay(blackScore, whiteScore) {
+            blackAdvantageEl.textContent = `黑棋优势分: ${Math.round(blackScore)}`;
+            whiteAdvantageEl.textContent = `白棋优势分: ${Math.round(whiteScore)}`;
+
+            if (blackScore > whiteScore * 1.2) { 
+                blackAdvantageEl.style.color = '#16a34a'; 
+                whiteAdvantageEl.style.color = '#ef4444'; 
+            } else if (whiteScore > blackScore * 1.2) { 
+                blackAdvantageEl.style.color = '#ef4444'; 
+                whiteAdvantageEl.style.color = '#16a34a'; 
+            } else { 
+                blackAdvantageEl.style.color = '#1f2937'; 
+                whiteAdvantageEl.style.color = '#1f2937'; 
+            }
+        }
+
+        // --- Online Multiplayer Logic ---
+
+        async function createOnlineGame() {
+            if (!db || !userId) {
+                onlineGameStatusEl.textContent = 'Firebase未初始化或用户未认证。';
+                return;
+            }
+
+            onlineGameStatusEl.textContent = '创建游戏中...';
+            try {
+                const gamesCollectionRef = collection(db, `artifacts/${appId}/public/data/games`);
+                const newGameRef = doc(gamesCollectionRef); // Let Firestore generate ID
+                const newGameId = newGameRef.id;
+
+                await setDoc(newGameRef, {
+                    board: JSON.stringify(Array(BOARD_SIZE).fill(0).map(() => Array(BOARD_SIZE).fill(0))),
+                    currentPlayer: 1,
+                    player1Id: userId, // Creator is Player 1 (Black)
+                    player2Id: null,
+                    status: 'waiting', // Waiting for second player
+                    winner: null,
+                    lastMove: null,
+                    createdAt: serverTimestamp()
+                });
+
+                currentGameId = newGameId;
+                playerRole = 1; // Player 1 (Black)
+                currentGameIdEl.textContent = currentGameId;
+                gameIdDisplay.classList.remove('hidden');
+                onlineGameStatusEl.textContent = `游戏已创建！等待对手加入。游戏ID: ${currentGameId}`;
+                chatSection.classList.remove('hidden');
+                startNewGame(); // Reset local board for new game
+                listenToGameUpdates(currentGameId);
+                listenForChatMessages(currentGameId);
+
+            } catch (error) {
+                console.error("Error creating game:", error);
+                onlineGameStatusEl.textContent = `创建游戏失败: ${error.message}`;
+            }
+        }
+
+        async function joinOnlineGame() {
+            if (!db || !userId) {
+                onlineGameStatusEl.textContent = 'Firebase未初始化或用户未认证。';
+                return;
+            }
+
+            const gameIdToJoin = joinGameIdInput.value.trim();
+            if (!gameIdToJoin) {
+                onlineGameStatusEl.textContent = '请输入游戏ID。';
+                return;
+            }
+
+            onlineGameStatusEl.textContent = '加入游戏中...';
+            try {
+                const gameDocRef = doc(db, `artifacts/${appId}/public/data/games`, gameIdToJoin);
+                const gameDocSnap = await getDoc(gameDocRef);
+
+                if (!gameDocSnap.exists()) {
+                    onlineGameStatusEl.textContent = '游戏不存在。';
+                    return;
+                }
+
+                const gameData = gameDocSnap.data();
+
+                if (gameData.status === 'playing') {
+                    onlineGameStatusEl.textContent = '该游戏已开始或已满员。';
+                    return;
+                }
+                if (gameData.player1Id === userId) {
+                     onlineGameStatusEl.textContent = '你已经是这个游戏的玩家1。';
+                     currentGameId = gameIdToJoin;
+                     playerRole = 1;
+                     currentGameIdEl.textContent = currentGameId;
+                     gameIdDisplay.classList.remove('hidden');
+                     chatSection.classList.remove('hidden');
+                     startNewGame(); // Reset local board for new game
+                     listenToGameUpdates(currentGameId);
+                     listenForChatMessages(currentGameId);
+                     return;
+                }
+                if (gameData.player2Id && gameData.player2Id !== userId) {
+                    onlineGameStatusEl.textContent = '该游戏已满员。';
+                    return;
+                }
+
+                await updateDoc(gameDocRef, {
+                    player2Id: userId,
+                    status: 'playing' // Game starts now
+                });
+
+                currentGameId = gameIdToJoin;
+                playerRole = 2; // Player 2 (White)
+                currentGameIdEl.textContent = currentGameId;
+                gameIdDisplay.classList.remove('hidden');
+                onlineGameStatusEl.textContent = `已成功加入游戏！游戏ID: ${currentGameId}`;
+                chatSection.classList.remove('hidden');
+                startNewGame(); // Reset local board for new game
+                listenToGameUpdates(currentGameId);
+                listenForChatMessages(currentGameId);
+
+            } catch (error) {
+                console.error("Error joining game:", error);
+                onlineGameStatusEl.textContent = `加入游戏失败: ${error.message}`;
+            }
+        }
+
+        async function makeOnlineMove(row, col) {
+            if (!currentGameId || gameOver || board[row][col] !== 0 || currentPlayer !== playerRole) {
+                onlineGameStatusEl.textContent = '无法落子：不是你的回合，游戏已结束，或该位置已被占用。';
+                return;
+            }
+
+            onlineGameStatusEl.textContent = '发送落子中...';
+            try {
+                const gameDocRef = doc(db, `artifacts/${appId}/public/data/games`, currentGameId);
+                
+                // Simulate move locally to check for win/draw before sending
+                board[row][col] = currentPlayer;
+                const isWin = checkWin(row, col);
+                const isDraw = isBoardFull();
+                board[row][col] = 0; // Revert local simulation
+
+                let newStatus = 'playing';
+                let newWinner = null;
+                let nextPlayer = currentPlayer === 1 ? 2 : 1;
+
+                if (isWin) {
+                    newStatus = 'finished';
+                    newWinner = userId; // The player who just made the move wins
+                    updateStatus(`${playerRole === 1 ? '黑方' : '白方'}获胜！`, playerRole === 1 ? '#16a34a' : '#ef4444');
+                } else if (isDraw) {
+                    newStatus = 'finished';
+                    updateStatus('平局！', '#6b7280');
+                } else {
+                    updateStatus(`${nextPlayer === 1 ? '黑方' : '白方'}的回合`, '#1f2937');
+                }
+
+                await updateDoc(gameDocRef, {
+                    board: JSON.stringify(board.map((r, rIdx) => r.map((c, cIdx) => (rIdx === row && cIdx === col) ? currentPlayer : c))), // Update board with new move
+                    currentPlayer: nextPlayer,
+                    lastMove: { row, col },
+                    status: newStatus,
+                    winner: newWinner
+                });
+                onlineGameStatusEl.textContent = '落子成功。';
+
+            } catch (error) {
+                console.error("Error making online move:", error);
+                onlineGameStatusEl.textContent = `落子失败: ${error.message}`;
+            }
+        }
+
+        function listenToGameUpdates(gameId) {
+            if (gameUnsubscribe) {
+                gameUnsubscribe(); // Unsubscribe from previous game if any
+            }
+
+            const gameDocRef = doc(db, `artifacts/${appId}/public/data/games`, gameId);
+            gameUnsubscribe = onSnapshot(gameDocRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    board = JSON.parse(data.board);
+                    currentPlayer = data.currentPlayer;
+                    lastMove = data.lastMove;
+                    gameOver = (data.status === 'finished');
+                    
+                    redrawAll();
+                    updateAdvantageDisplayForCurrentBoard();
+
+                    if (gameOver) {
+                        if (data.winner) {
+                            const winnerText = data.winner === userId ? '你' : (data.winner === data.player1Id ? '黑方' : '白方');
+                            updateStatus(`${winnerText}获胜！`, data.winner === userId ? '#16a34a' : '#ef4444');
+                        } else {
+                            updateStatus('平局！', '#6b7280');
+                        }
+                        onlineGameStatusEl.textContent = `游戏结束。`;
+                    } else if (data.status === 'waiting') {
+                        onlineGameStatusEl.textContent = '等待对手加入...';
+                        updateStatus('等待对手...', '#6b7280');
+                    } else if (data.status === 'playing') {
+                        if (currentPlayer === playerRole) {
+                            onlineGameStatusEl.textContent = '轮到你落子了！';
+                            updateStatus(`你的回合 (${playerRole === 1 ? '黑棋' : '白棋'})`, '#1f2937');
+                        } else {
+                            onlineGameStatusEl.textContent = '等待对手落子...';
+                            updateStatus(`${currentPlayer === 1 ? '黑方' : '白方'}的回合`, '#1f2937');
+                        }
+                        chatSection.classList.remove('hidden'); // Show chat once game starts
+                    }
+                } else {
+                    onlineGameStatusEl.textContent = '游戏已不存在。';
+                    initGame(); // Reset to initial state if game disappears
+                }
+            }, (error) => {
+                console.error("Error listening to game updates:", error);
+                onlineGameStatusEl.textContent = `游戏同步失败: ${error.message}`;
+            });
+        }
+
+        // --- Chat Logic ---
+        async function sendMessage() {
+            if (!currentGameId || !userId || !chatInput.value.trim()) {
+                return;
+            }
+
+            try {
+                const chatCollectionRef = collection(db, `artifacts/${appId}/public/data/games/${currentGameId}/messages`);
+                await addDoc(chatCollectionRef, {
+                    senderId: userId,
+                    senderName: userId.substring(0, 6), // Use a short ID as name
+                    message: chatInput.value.trim(),
+                    timestamp: serverTimestamp()
+                });
+                chatInput.value = ''; // Clear input after sending
+            } catch (error) {
+                console.error("Error sending message:", error);
+            }
+        }
+
+        function listenForChatMessages(gameId) {
+            if (chatUnsubscribe) {
+                chatUnsubscribe();
+            }
+            const messagesCollectionRef = collection(db, `artifacts/${appId}/public/data/games/${gameId}/messages`);
+            const q = query(messagesCollectionRef, orderBy('timestamp', 'asc'));
+
+            chatUnsubscribe = onSnapshot(q, (snapshot) => {
+                chatMessagesEl.innerHTML = ''; // Clear existing messages
+                snapshot.forEach((doc) => {
+                    const msg = doc.data();
+                    const messageEl = document.createElement('div');
+                    messageEl.classList.add('chat-message');
+                    const senderName = msg.senderId === userId ? '你' : msg.senderName;
+                    const timestamp = msg.timestamp ? new Date(msg.timestamp.toDate()).toLocaleTimeString() : '发送中...';
+                    messageEl.innerHTML = `<span class="sender">${senderName}:</span> ${msg.message} <span class="timestamp">${timestamp}</span>`;
+                    chatMessagesEl.appendChild(messageEl);
+                });
+                chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight; // Scroll to bottom
+            }, (error) => {
+                console.error("Error listening to chat messages:", error);
+            });
+        }
+
+
+        // --- Event Listeners ---
+        canvas.addEventListener('click', handleBoardClick);
+        canvas.addEventListener('mousemove', handleMouseMove); 
+        canvas.addEventListener('mouseout', handleMouseOut);   
+        newGameBtn.addEventListener('click', initGame); // Changed to initGame to clear all states
+
+        pvaBtn.addEventListener('click', () => { gameMode = 'pva'; updateModeButtons(); updateUIVisibility(); startNewGame(); });
+        pvpBtn.addEventListener('click', () => { gameMode = 'pvp'; updateModeButtons(); updateUIVisibility(); startNewGame(); });
+        onlineBtn.addEventListener('click', () => { gameMode = 'online'; updateModeButtons(); updateUIVisibility(); initGame(); }); // initGame to reset online state
+
+        difficultySelect.addEventListener('change', startNewGame);
+        coordsToggle.addEventListener('change', (e) => { showCoordinates = e.target.checked; redrawAll(); });
+
+        // Online specific event listeners
+        createGameBtn.addEventListener('click', createOnlineGame);
+        joinGameBtn.addEventListener('click', joinOnlineGame);
+        sendChatBtn.addEventListener('click', sendMessage);
+        chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // --- Initialization ---
+        window.onload = async () => {
+            await initializeFirebase();
+            initGame(); // Initial setup of the game UI
+        };
+    </script>
+</body>
+</html>
