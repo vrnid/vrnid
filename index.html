@@ -230,7 +230,15 @@
 
         // --- Firebase Initialization and Authentication ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const firebaseConfig = {
+              apiKey: "AIzaSyAXlYCZr6F1Nunieg7CDeYM0O_6iX1AZq0",
+              authDomain: "wuzi-1ecf3.firebaseapp.com",
+              projectId: "wuzi-1ecf3",
+              storageBucket: "wuzi-1ecf3.firebasestorage.app",
+              messagingSenderId: "274766423411",
+              appId: "1:274766423411:web:ef1549f49be22bf53b9106",
+              measurementId: "G-EFPFDMRSMZ"
+            };
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         async function initializeFirebase() {
